@@ -1,80 +1,40 @@
 package tpc.mc.christmas;
 
-import java.util.*;
+import java.util.Iterator;
 
-import org.objectweb.asm.*;
-import org.objectweb.asm.tree.*;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.FieldNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.LabelNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.VarInsnNode;
 
-import com.google.common.base.*;
+import com.google.common.base.Predicate;
 
-import net.minecraft.block.state.*;
-import net.minecraft.entity.*;
-import net.minecraft.entity.item.*;
-import net.minecraft.entity.passive.*;
-import net.minecraft.init.*;
-import net.minecraft.inventory.*;
-import net.minecraft.item.*;
-import net.minecraft.network.datasync.*;
-import net.minecraft.util.*;
-import net.minecraft.util.math.*;
-import net.minecraft.world.*;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityLivingBase;
+import net.minecraft.entity.item.EntityItem;
+import net.minecraft.entity.passive.EntityPig;
+import net.minecraft.init.Items;
+import net.minecraft.inventory.EntityEquipmentSlot;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraft.util.DamageSource;
+import net.minecraft.util.math.AxisAlignedBB;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
 
 /**
- * 各种调用
+ * 各种调用，整个MOD在服务端运行，服务器的话服务器装就可以(插件式)，客户端装也行
  * */
 public final class Util {
-	
-	/**
-	 * 在一堆实体里获取疯猪感兴趣的实体
-	 * */
-	public static final Entity pigCrazy(EntityPig pig, Iterator<Entity> entities) {
-		if(!christmas()) return null;
-		Entity crazy = null;
-		
-		while(entities.hasNext()) {
-			Entity e = entities.next();
-			if(!pig.getEntitySenses().canSee(e) && !e.isEntityAlive()) continue;
-			
-			if(e instanceof EntityItem) { //是否是圣诞萝卜
-				Item item = ((EntityItem) e).getEntityItem().getItem();
-				
-				if(item == Items.CARROT) {
-					if(crazy == null) crazy = e;
-					else if(crazy.getDistanceSqToEntity(pig) > e.getDistanceSqToEntity(pig)) crazy = e;
-				}
-			} else if(e instanceof EntityLivingBase) { //手上拿着的或其他部位
-				for(EntityEquipmentSlot slot : EntityEquipmentSlot.values()) {
-					ItemStack stack = ((EntityLivingBase) e).getItemStackFromSlot(slot);
-					
-					if(stack != null && (stack.getItem() == Items.CARROT)) {
-						if(crazy == null) crazy = e;
-						else if(crazy.getDistanceSqToEntity(pig) > e.getDistanceSqToEntity(pig)) crazy = e;
-					}
-				}
-			}
-		}
-		
-		return crazy;
-	}
-	
-	/**
-	 * 疯猪赶到实体边上以后，返回猪是否满足
-	 * */
-	public static final boolean crazyPigInter(EntityPig pig, Entity poor) {
-		if(!christmas()) return true;
-		
-		if(poor instanceof EntityItem) {
-			Item i = ((EntityItem) poor).getEntityItem().getItem();
-			
-			if(i == Items.CARROT) {
-				pig.onItemPickup(poor, 1);
-				poor.setDead();
-				return true;
-			}
-		} else if(!pig.isPassenger(poor)) poor.attackEntityFrom(DamageSource.causeMobDamage(pig), ((float) pig.getEntityBoundingBox().getAverageEdgeLength()) * 1.5F);
-		
-		return false;
-	}
 	
 	/**
 	 * handle blocks
@@ -109,32 +69,79 @@ public final class Util {
 	}
 	
 	/**
-	 * update a pig
+	 * 在一堆实体里获取疯猪感兴趣的实体
 	 * */
-	public static final void onPigUpdate(EntityPig pig) {
-		if(!christmas()) return;
+	public static final Entity crazyfor(EntityPig pig, Iterator<Entity> entities) {
+		if(!christmas()) return null;
+		Entity crazy = null;
 		
-		//prepare
-		final World w = pig.worldObj;
-		final boolean server = pig.isServerWorld();
-		Entity stared = w.getEntityByID(pig.getDataManager().get(PIG_STARED)); //TODO
-		
-		if(stared == null) {
-			if(server) { //server only
-				stared = Util.pigCrazy(pig, w.getEntitiesWithinAABBExcludingEntity(pig, pig.getEntityBoundingBox().expandXyz(32D)).iterator());
-				
-				//盯
-				if(stared != null) pig.getDataManager().set(PIG_STARED, stared.getEntityId());
-			}
-		} else { //both side
+		while(entities.hasNext()) {
+			Entity e = entities.next();
+			if(!pig.getEntitySenses().canSee(e) && !e.isEntityAlive()) continue;
 			
+			if(e instanceof EntityItem) { //是否是圣诞萝卜
+				Item item = ((EntityItem) e).getEntityItem().getItem();
+				
+				if(item == Items.CARROT) {
+					if(crazy == null) crazy = e;
+					else if(crazy.getDistanceSqToEntity(pig) > e.getDistanceSqToEntity(pig)) crazy = e;
+				}
+			} else if(e instanceof EntityLivingBase) { //手上拿着的或其他部位
+				for(EntityEquipmentSlot slot : EntityEquipmentSlot.values()) {
+					ItemStack stack = ((EntityLivingBase) e).getItemStackFromSlot(slot);
+					
+					if(stack != null && (stack.getItem() == Items.CARROT)) {
+						if(crazy == null) crazy = e;
+						else if(crazy.getDistanceSqToEntity(pig) > e.getDistanceSqToEntity(pig)) crazy = e;
+					}
+				}
+			}
 		}
+		
+		return crazy;
 	}
 	
 	/**
-	 * 猪盯着的Entity的ID, Server搜寻瞪着看的
+	 * 疯猪赶到实体边上以后，返回猪是否满足
 	 * */
-	public static final DataParameter<Integer> PIG_STARED = EntityDataManager.<Integer>createKey(EntityPig.class, DataSerializers.VARINT);
+	public static final boolean crazyinteract(EntityPig pig, Entity poor) {
+		if(!christmas()) return true;
+		
+		if(poor instanceof EntityItem) {
+			Item i = ((EntityItem) poor).getEntityItem().getItem();
+			
+			if(i == Items.CARROT) {
+				pig.onItemPickup(poor, 1);
+				poor.setDead();
+				return true;
+			}
+		} else if(!pig.isPassenger(poor)) poor.attackEntityFrom(DamageSource.causeMobDamage(pig), ((float) pig.getEntityBoundingBox().getAverageEdgeLength()) * 1.5F);
+		
+		return false;
+	}
+	
+	/**
+	 * 获取pig的目标，CodeRuler内联
+	 * */
+	public static final Entity crazytarget(EntityPig pig) {
+		throw new InternalError("Inline Method 'crazytarget(EntityPig)Entity' Failed!");
+	}
+	
+	/**
+	 * 设置pig的目标，内联
+	 * */
+	public static final void crazytarget(EntityPig pig, Entity target) {
+		throw new InternalError("Inline Method 'crazytarget(EntityPig, Entity)Void' Failed!");
+	}
+	
+	/**
+	 * update a pig, server side
+	 * */
+	public static final void onPigUpdate(EntityPig pig) {
+		if(!christmas() && !pig.isServerWorld()) return; //圣诞节&服务端only
+		
+		//TODO
+	}
 	
 	/**
 	 * Internal
@@ -192,6 +199,31 @@ public final class Util {
 				} else;
 				ns.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "tpc/mc/christmas/Util", "onPigUpdate", "(Lnet/minecraft/entity/passive/EntityPig;)V"));
 				inject(ns, onLivingUpdate.instructions, new $P0(Opcodes.RETURN));
+				
+				//create fields
+				cn.fields.add(new FieldNode(Opcodes.ACC_PUBLIC, "_internal_christmas_pig_crazytarget", "Lnet/minecraft/entity/Entity;", null, null));
+			} else if(cn.name.equals("tpc/mc/christmas/Util")) { //内联
+				//roll all methods
+				Iterator<MethodNode> mns = cn.methods.iterator();
+				while(mns.hasNext()) {
+					MethodNode mn = mns.next();
+					
+					if(mn.name.equals("crazytarget")) { //find
+						InsnList ns = mn.instructions;
+						ns.clear(); //防止喷错
+						
+						if(mn.desc.equals("(Lnet/minecraft/entity/passive/EntityPig;)Lnet/minecraft/entity/Entity;")) { //getter
+							ns.add(new VarInsnNode(Opcodes.ALOAD, 0));
+							ns.add(new FieldInsnNode(Opcodes.GETFIELD, "net/minecraft/entity/passive/EntityPig", "_internal_christmas_pig_crazytarget", "Lnet/minecraft/entity/Entity;"));
+							ns.add(new InsnNode(Opcodes.ARETURN));
+						} else { //setter
+							ns.add(new VarInsnNode(Opcodes.ALOAD, 0));
+							ns.add(new VarInsnNode(Opcodes.ALOAD, 1));
+							ns.add(new FieldInsnNode(Opcodes.PUTFIELD, "net/minecraft/entity/passive/EntityPig", "_internal_christmas_pig_crazytarget", "Lnet/minecraft/entity/Entity;"));
+							ns.add(new InsnNode(Opcodes.RETURN));
+						}
+					}
+				}
 			}
 			
 			//write down
