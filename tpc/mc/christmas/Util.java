@@ -1,6 +1,7 @@
 package tpc.mc.christmas;
 
 import java.util.Iterator;
+import java.util.Random;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -18,18 +19,26 @@ import org.objectweb.asm.tree.VarInsnNode;
 
 import com.google.common.base.Predicate;
 
+import net.minecraft.block.Block;
+import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.passive.EntityPig;
+import net.minecraft.entity.projectile.ProjectileHelper;
+import net.minecraft.init.Blocks;
 import net.minecraft.init.Items;
+import net.minecraft.init.SoundEvents;
 import net.minecraft.inventory.EntityEquipmentSlot;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.DamageSource;
+import net.minecraft.util.EnumParticleTypes;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.WorldServer;
 
 /**
  * 各种调用，整个MOD在服务端运行，服务器的话服务器装就可以(插件式)，客户端装也行
@@ -135,12 +144,117 @@ public final class Util {
 	}
 	
 	/**
+	 * 获取pig对stared的哪里感兴趣, WORLD POS
+	 * */
+	public static final Vec3d crazypos(EntityPig pig, Entity stared) {
+		return stared.getPositionVector(); //TODO & 骑乘BUG
+	}
+	
+	/**
 	 * update a pig, server side
 	 * */
-	public static final void onPigUpdate(EntityPig pig) {
-		if(!christmas() && !pig.isServerWorld()) return; //圣诞节&服务端only
+	public static final void onPigUpdate(final EntityPig pig) {
+		if(!pig.isServerWorld() || !christmas()) return; //圣诞节&服务端only
 		
-		//TODO
+		//prepare
+		final WorldServer w = (WorldServer) pig.worldObj;
+		final Random r = pig.getRNG();
+		Entity stared = crazytarget(pig);
+		
+		//stared拾取
+		if(stared == null) { //空闲状态
+			stared = Util.crazyfor(pig, w.getEntitiesWithinAABBExcludingEntity(pig, pig.getEntityBoundingBox().expandXyz(32D)).iterator());
+			
+			//有东西了
+			if(stared != null) {
+				crazytarget(pig, stared);
+				
+				//生成粒子效果
+				w.spawnParticle(EnumParticleTypes.HEART, pig.posX + (double) (r.nextFloat() * pig.width * 2.0F) - (double) pig.width, pig.posY + 0.5D + (double) (r.nextFloat() * pig.height), pig.posZ + (double) (r.nextFloat() * pig.width * 2.0F) - (double) pig.width, 3 + r.nextInt(2), 0D, 0D, 0D, 0);
+				
+				//播放音效
+				pig.playSound(SoundEvents.ENTITY_PIG_AMBIENT, 0.5F, 2F);
+				pig.playSound(SoundEvents.ENTITY_ZOMBIE_PIG_AMBIENT, 2F, 16F);
+			}
+		} else { //stared切换
+			Entity crazy = Util.crazyfor(pig, w.getEntitiesWithinAABBExcludingEntity(pig, pig.getEntityBoundingBox().expandXyz(8D)).iterator());
+			
+			//更近的
+			if(crazy != null && crazy != stared) {
+				crazytarget(pig, stared = crazy);
+				
+				//播放音效
+				pig.playSound(SoundEvents.ENTITY_ZOMBIE_PIG_AMBIENT, 1F, 4F);
+			}
+			
+			//check alive, 诺死掉
+			if(!stared.isEntityAlive()) {
+				crazytarget(pig, stared = null);
+				pig.attackEntityFrom(DamageSource.causeMobDamage(pig), r.nextFloat() + pig.getHealth() * r.nextFloat());
+				pig.func_189654_d(false);
+				
+				//粒子效果
+				w.spawnParticle(EnumParticleTypes.DAMAGE_INDICATOR, pig.posX + (double) (r.nextFloat() * pig.width * 2.0F) - (double) pig.width, pig.posY + 0.5D + (double) (r.nextFloat() * pig.height), pig.posZ + (double) (r.nextFloat() * pig.width * 2.0F) - (double) pig.width, 10 + r.nextInt(5), 0D, 0D, 0D, 0);
+				
+				//播放音效
+				pig.playSound(SoundEvents.ENTITY_PIG_DEATH, 2.7F, 32F);
+			}
+		}
+		
+		//追逐
+		if(stared != null) {
+			Vec3d toward = crazypos(pig, stared);
+			Vec3d dir = toward.subtract(pig.getPositionVector()).normalize();
+			
+			//拱！
+			Util.blocks(pig.getEntityBoundingBox().expandXyz(0.25D), new Predicate<BlockPos>() {
+				
+				@Override
+				public boolean apply(BlockPos pos) {
+					IBlockState state = w.getBlockState(pos);
+					
+					//可碰撞的
+					if(state.getCollisionBoundingBox(w, pos) != Block.NULL_AABB) {
+						float hard = state.getBlockHardness(w, pos);
+						
+						//怼掉
+						if(0 <= hard && hard <= 2.5F) w.destroyBlock(pos, true);
+						
+						//受伤
+						hard = Math.abs(hard) * 0.15F + r.nextFloat() * 0.1F;
+						if(pig.getMaxHealth() > hard) pig.setHealth(pig.getMaxHealth() - hard);
+						else pig.attackEntityFrom(DamageSource.flyIntoWall, hard);
+					}
+					
+					return false;
+				}
+			});
+			
+			//追到互交
+			if(w.getEntitiesWithinAABBExcludingEntity(pig, pig.getEntityBoundingBox().expandXyz(0.25D)).contains(stared)) {
+				if(Util.crazyinteract(pig, stared)) {
+					crazytarget(pig, null);
+					pig.heal(pig.getMaxHealth());
+					pig.func_189654_d(false);
+					
+					//粒子效果
+					w.spawnParticle(EnumParticleTypes.HEART, pig.posX + (double) (r.nextFloat() * pig.width * 2.0F) - (double) pig.width, pig.posY + 0.5D + (double) (r.nextFloat() * pig.height), pig.posZ + (double) (r.nextFloat() * pig.width * 2.0F) - (double) pig.width, 10 + r.nextInt(5), 0D, 0D, 0D, 0);
+					
+					//播放音效
+					pig.playSound(SoundEvents.ENTITY_GENERIC_EAT, 0.4F, 2F);
+				}
+			}
+			
+			//失重
+			pig.func_189654_d(true);
+			pig.fallDistance = 0F;
+			
+			//让猪飞，调整猪的旋转
+			pig.setVelocity(-dir.xCoord, dir.yCoord, -dir.zCoord);
+			ProjectileHelper.rotateTowardsMovement(pig, 1F);
+			pig.rotationYawHead = pig.prevRotationYawHead = pig.rotationYaw;
+			pig.setVelocity(dir.xCoord, dir.yCoord, dir.zCoord);
+		}
 	}
 	
 	/**
