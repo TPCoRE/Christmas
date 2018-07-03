@@ -1,5 +1,6 @@
 package tpc.mc.christmas;
 
+import java.util.Calendar;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -72,12 +73,10 @@ public final class Util {
 	 * 今天是否是圣诞节
 	 * */
 	public static final boolean christmas() {
-		/*Calendar cal = Calendar.getInstance();
-		if(cal.get(Calendar.MONTH) == 12 && cal.get(Calendar.HOUR_OF_DAY) == 25) return true;
+		Calendar cal = Calendar.getInstance();
+		if(cal.get(Calendar.MONTH) == Calendar.DECEMBER && cal.get(Calendar.DAY_OF_MONTH) == 25) return true;
 		
-		return false;*/
-		
-		return true; //TODO DEBUG ONLY
+		return false;
 	}
 	
 	/**
