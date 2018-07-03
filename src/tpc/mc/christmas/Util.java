@@ -292,6 +292,14 @@ public final class Util {
 			ClassNode cn = new ClassNode();
 			cr.accept(cn, 0);
 			
+			//CL: net/minecraft/entity/item/EntityBoat -> aap
+			//CL: net/minecraft/entity/Entity -> rw
+			//CL: net/minecraft/entity/passive/EntityPig -> wi
+			//CL: net/minecraft/entity/passive/EntityAnimal -> wc
+			//MD: net/minecraft/entity/Entity/onUpdate -> m
+			//MD: net/minecraft/entity/Entity/func_189654_d -> d
+			//MD: net/minecraft/entity/EntityLivingBase/onLivingUpdate -> n
+			
 			//special class found
 			if(cn.name.equals("net/minecraft/entity/item/EntityBoat")) {
 				MethodNode onUpdate = null;
