@@ -14,8 +14,8 @@ public final class Start {
 	/**
 	 * Æô¶¯
 	 * */
-	public static final void premian(String arg, Instrumentation inst) throws Throwable {
-		System.out.println("Christmas Mod -> Starts!");
+	public static final void premain(String arg, Instrumentation inst) throws Throwable {
+		System.out.println("Christmas Mod -> Starts(Version: 0.0.0)!");
 		
 		final Method m = Class.forName("tpc.mc.christmas.Util$CodeRuler").getMethod("codefix", byte[].class);
 		inst.addTransformer(new ClassFileTransformer() {
