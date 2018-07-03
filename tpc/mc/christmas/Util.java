@@ -1,6 +1,8 @@
 package tpc.mc.christmas;
 
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.Random;
 
 import org.objectweb.asm.ClassReader;
@@ -12,7 +14,9 @@ import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.LabelNode;
+import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
@@ -26,7 +30,6 @@ import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.passive.EntityPig;
 import net.minecraft.entity.projectile.ProjectileHelper;
-import net.minecraft.init.Blocks;
 import net.minecraft.init.Items;
 import net.minecraft.init.SoundEvents;
 import net.minecraft.inventory.EntityEquipmentSlot;
@@ -91,7 +94,7 @@ public final class Util {
 			if(e instanceof EntityItem) { //是否是圣诞萝卜
 				Item item = ((EntityItem) e).getEntityItem().getItem();
 				
-				if(item == Items.CARROT) {
+				if(item == Items.CARROT || item == Items.CARROT_ON_A_STICK) {
 					if(crazy == null) crazy = e;
 					else if(crazy.getDistanceSqToEntity(pig) > e.getDistanceSqToEntity(pig)) crazy = e;
 				}
@@ -99,7 +102,7 @@ public final class Util {
 				for(EntityEquipmentSlot slot : EntityEquipmentSlot.values()) {
 					ItemStack stack = ((EntityLivingBase) e).getItemStackFromSlot(slot);
 					
-					if(stack != null && (stack.getItem() == Items.CARROT)) {
+					if(stack != null && (stack.getItem() == Items.CARROT || stack.getItem() == Items.CARROT_ON_A_STICK)) {
 						if(crazy == null) crazy = e;
 						else if(crazy.getDistanceSqToEntity(pig) > e.getDistanceSqToEntity(pig)) crazy = e;
 					}
@@ -119,9 +122,15 @@ public final class Util {
 		if(poor instanceof EntityItem) {
 			Item i = ((EntityItem) poor).getEntityItem().getItem();
 			
-			if(i == Items.CARROT) {
+			if(i == Items.CARROT || i == Items.CARROT_ON_A_STICK) {
 				pig.onItemPickup(poor, 1);
 				poor.setDead();
+				
+				//返还钓鱼竿
+				if(i == Items.CARROT_ON_A_STICK) {
+					pig.worldObj.spawnEntityInWorld(new EntityItem(pig.worldObj, poor.posX, poor.posY, poor.posZ, new ItemStack(Items.FISHING_ROD, 1)));
+				}
+				
 				return true;
 			}
 		} else if(!pig.isPassenger(poor)) poor.attackEntityFrom(DamageSource.causeMobDamage(pig), ((float) pig.getEntityBoundingBox().getAverageEdgeLength()) * 1.5F);
@@ -147,7 +156,20 @@ public final class Util {
 	 * 获取pig对stared的哪里感兴趣, WORLD POS
 	 * */
 	public static final Vec3d crazypos(EntityPig pig, Entity stared) {
-		return stared.getPositionVector(); //TODO & 骑乘BUG
+		Vec3d pos = stared.getPositionEyes(1F);
+		
+		//特殊处理
+		if(stared instanceof EntityLivingBase) {
+			ItemStack held0 = ((EntityLivingBase) stared).getHeldItemMainhand();
+			ItemStack held1 = ((EntityLivingBase) stared).getHeldItemOffhand();
+			
+			//手持萝卜杆子，需要调整pos向前，让猪追
+			if((held0 != null && held0.getItem() == Items.CARROT_ON_A_STICK) || (held1 != null && held1.getItem() == Items.CARROT_ON_A_STICK)) {
+				pos = pos.add(stared.getLookVec().scale(1.5D));
+			}
+		}
+		
+		return pos;
 	}
 	
 	/**
@@ -204,7 +226,18 @@ public final class Util {
 		//追逐
 		if(stared != null) {
 			Vec3d toward = crazypos(pig, stared);
-			Vec3d dir = toward.subtract(pig.getPositionVector()).normalize();
+			Vec3d v = toward.subtract(pig.getPositionEyes(1F)).normalize().scale(0.23D);
+			
+			//失重
+			pig.func_189654_d(true);
+			pig.fallDistance = 0F;
+			
+			//让猪飞，调整猪的旋转
+			pig.setVelocity(-v.xCoord, v.yCoord, -v.zCoord);
+			ProjectileHelper.rotateTowardsMovement(pig, 1F);
+			pig.rotationYawHead = pig.prevRotationYawHead = pig.rotationYaw;
+			pig.setVelocity(v.xCoord, v.yCoord, v.zCoord);
+			pig.moveEntity(v.xCoord, v.yCoord, v.zCoord);
 			
 			//拱！
 			Util.blocks(pig.getEntityBoundingBox().expandXyz(0.25D), new Predicate<BlockPos>() {
@@ -221,8 +254,8 @@ public final class Util {
 						if(0 <= hard && hard <= 2.5F) w.destroyBlock(pos, true);
 						
 						//受伤
-						hard = Math.abs(hard) * 0.15F + r.nextFloat() * 0.1F;
-						if(pig.getMaxHealth() > hard) pig.setHealth(pig.getMaxHealth() - hard);
+						hard = Math.abs(hard) * 0.15F + r.nextFloat() * 0.12F;
+						if(pig.getHealth() > hard) pig.setHealth(pig.getHealth() - hard);
 						else pig.attackEntityFrom(DamageSource.flyIntoWall, hard);
 					}
 					
@@ -244,16 +277,6 @@ public final class Util {
 					pig.playSound(SoundEvents.ENTITY_GENERIC_EAT, 0.4F, 2F);
 				}
 			}
-			
-			//失重
-			pig.func_189654_d(true);
-			pig.fallDistance = 0F;
-			
-			//让猪飞，调整猪的旋转
-			pig.setVelocity(-dir.xCoord, dir.yCoord, -dir.zCoord);
-			ProjectileHelper.rotateTowardsMovement(pig, 1F);
-			pig.rotationYawHead = pig.prevRotationYawHead = pig.rotationYaw;
-			pig.setVelocity(dir.xCoord, dir.yCoord, dir.zCoord);
 		}
 	}
 	
@@ -271,7 +294,41 @@ public final class Util {
 			cr.accept(cn, 0);
 			
 			//special class found
-			if(cn.name.equals("net/minecraft/entity/passive/EntityPig")) {
+			if(cn.name.equals("net/minecraft/entity/item/EntityBoat")) {
+				MethodNode onUpdate = null;
+				boolean onUpdate_exist = false;
+				
+				//roll all methods
+				Iterator<MethodNode> mns = cn.methods.iterator();
+				while(mns.hasNext()) {
+					MethodNode mn = mns.next();
+					
+					//Found ?!
+					if(mn.name.equals("onUpdate") && mn.desc.equals("()V")) {
+						onUpdate = mn;
+						onUpdate_exist = true;
+						
+						//Only one, so break
+						break;
+					}
+				}
+				
+				//prepare
+				if(onUpdate == null) onUpdate = (MethodNode) cn.visitMethod(Opcodes.ACC_PUBLIC, "onUpdate", "()V", null, null);
+				InsnList ns;
+				
+				//coding onUpdate
+				ns = new InsnList();
+				ns.add(new VarInsnNode(Opcodes.ALOAD, 0));
+				ns.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "tpc/mc/christmas/Util", "christmas", "()Z"));
+				ns.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "net/minecraft/entity/item/EntityBoat", "func_189654_d", "(Z)V"));
+				onUpdate.instructions.insert(copy(ns));
+				if(!onUpdate_exist) {
+					onUpdate.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+					onUpdate.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, "net/minecraft/entity/Entity", "onUpdate", "()V"));
+					onUpdate.instructions.add(new InsnNode(Opcodes.RETURN));
+				} else;
+			} else if(cn.name.equals("net/minecraft/entity/passive/EntityPig")) {
 				MethodNode onLivingUpdate = null;
 				boolean onLivingUpdate_exist = false;
 				
@@ -364,9 +421,20 @@ public final class Util {
 		 * */
 		public static final InsnList copy(InsnList src) {
 			InsnList r = new InsnList();
-			Iterator<AbstractInsnNode> iter = src.iterator();
+			Map<LabelNode, LabelNode> map = new HashMap<>();
+			Iterator<AbstractInsnNode> iter;
 			
-			while(iter.hasNext()) r.add(iter.next().clone(null));
+			//roll codes and find labels
+			iter = src.iterator();
+			while(iter.hasNext()) {
+				AbstractInsnNode n = iter.next();
+				
+				if(n.getType() == AbstractInsnNode.LABEL && !map.containsKey(n)) map.put((LabelNode) n, new LabelNode());
+			}
+			
+			//clone
+			iter = src.iterator();
+			while(iter.hasNext()) r.add(iter.next().clone(map));
 			
 			return r;
 		}
