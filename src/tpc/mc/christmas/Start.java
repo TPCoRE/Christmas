@@ -17,12 +17,13 @@ public final class Start {
 	public static final void premain(String arg, Instrumentation inst) throws Throwable {
 		System.out.println("Christmas Mod -> Starts(Version: 0.0.0)!");
 		
+		final Method m = Class.forName("tpc.mc.christmas.Util$CodeRuler").getMethod("codefix", byte[].class);
 		inst.addTransformer(new ClassFileTransformer() {
 			
 			@Override
 			public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined, ProtectionDomain protectionDomain, byte[] classfileBuffer) throws IllegalClassFormatException {
 				try {
-					classfileBuffer = Util.CodeRuler.codefix(classfileBuffer);
+					classfileBuffer = (byte[]) m.invoke(null, classfileBuffer);
 				} catch(Throwable e) {
 					e.printStackTrace();
 					System.exit(0);
